@@ -1,3 +1,5 @@
+https://epjrvxbbppumrprofgbo.supabase.co
+sb_publishable_Q6CMxzMoUizizEc8fK_zkQ_PduaG8r8
 # Getting Started with Create React App
 
 This project was bootstrapped with [Create React App](https://github.com/facebook/create-react-app).

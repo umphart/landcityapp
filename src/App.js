@@ -1,25 +1,38 @@
-import logo from './logo.svg';
+import React from 'react';
+import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-dom';
+import { Toaster } from 'react-hot-toast';
+import Login from './components/Login';
+import Dashboard from './components/Dashboard';
+import Clients from './components/Clients';
+import Properties from './components/Properties';
+import Payments from './components/Payments';
+import Layout from './components/Layout';
+import { AuthProvider } from './contexts/AuthContext';
 import './App.css';
 
 function App() {
   return (
-    <div className="App">
-      <header className="App-header">
-        <img src={logo} className="App-logo" alt="logo" />
-        <p>
-          Edit <code>src/App.js</code> and save to reload.
-        </p>
-        <a
-          className="App-link"
-          href="https://reactjs.org"
-          target="_blank"
-          rel="noopener noreferrer"
-        >
-          Learn React
-        </a>
-      </header>
-    </div>
+    <AuthProvider>
+      <Router>
+        <Toaster position="top-right" />
+        <Routes>
+          <Route path="/login" element={<Login />} />
+          <Route path="/" element={<PrivateRoute><Layout /></PrivateRoute>}>
+            <Route index element={<Navigate to="/dashboard" />} />
+            <Route path="dashboard" element={<Dashboard />} />
+            <Route path="clients" element={<Clients />} />
+            <Route path="properties" element={<Properties />} />
+            <Route path="payments" element={<Payments />} />
+          </Route>
+        </Routes>
+      </Router>
+    </AuthProvider>
   );
+}
+
+function PrivateRoute({ children }) {
+  const isAuthenticated = localStorage.getItem('adminToken');
+  return isAuthenticated ? children : <Navigate to="/login" />;
 }
 
 export default App;
