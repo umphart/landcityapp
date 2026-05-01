@@ -8,7 +8,8 @@ import {
   FaMoneyBillWave, 
   FaSignOutAlt, 
   FaBars,
-  FaHome
+  FaHome,
+  FaCog
 } from 'react-icons/fa';
 import './Layout.css';
 
@@ -58,7 +59,12 @@ const Layout = () => {
             <FaMoneyBillWave className="nav-icon" />
             <span>Payments</span>
           </NavLink>
+<NavLink to="/settings" className={({ isActive }) => isActive ? 'active' : ''}>
+  <FaCog className="nav-icon" />
+  <span>Settings</span>
+</NavLink>
         </nav>
+        
         
         <div className="sidebar-footer">
           <NavLink to="/" className="home-link">

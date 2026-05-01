@@ -7,6 +7,7 @@ import Clients from './components/Clients';
 import Properties from './components/Properties';
 import Payments from './components/Payments';
 import Layout from './components/Layout';
+import Settings from './components/Settings';
 import { AuthProvider } from './contexts/AuthContext';
 import './App.css';
 
@@ -23,6 +24,7 @@ function App() {
             <Route path="clients" element={<Clients />} />
             <Route path="properties" element={<Properties />} />
             <Route path="payments" element={<Payments />} />
+            <Route path="settings" element={<Settings />} />
           </Route>
         </Routes>
       </Router>
