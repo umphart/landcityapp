@@ -1,7 +1,7 @@
 import React, { useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
-import { FaUser, FaLock, FaSignInAlt, FaArrowLeft, FaExclamationCircle } from 'react-icons/fa';
+import { FaUser, FaLock, FaSignInAlt, FaArrowLeft, FaExclamationCircle, FaEye, FaEyeSlash } from 'react-icons/fa';
 import './Login.css';
 
 const Login = () => {
@@ -9,6 +9,7 @@ const Login = () => {
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState('');
+  const [showPassword, setShowPassword] = useState(false);
   const { login } = useAuth();
   const navigate = useNavigate();
 
@@ -53,7 +54,7 @@ const Login = () => {
           <div className="form-group">
             <label>Username</label>
             <div className="input-wrapper">
-              
+            
               <input
                 type="text"
                 value={username}
@@ -68,14 +69,23 @@ const Login = () => {
           <div className="form-group">
             <label>Password</label>
             <div className="input-wrapper">
-              
+          
               <input
-                type="password"
+                type={showPassword ? 'text' : 'password'}
                 value={password}
                 onChange={(e) => setPassword(e.target.value)}
                 placeholder="Enter your password"
                 required
               />
+              <button
+                type="button"
+                className="password-toggle"
+                onClick={() => setShowPassword(!showPassword)}
+                tabIndex={-1}
+                title={showPassword ? 'Hide Password' : 'Show Password'}
+              >
+                {showPassword ? <FaEyeSlash /> : <FaEye />}
+              </button>
             </div>
           </div>
           
@@ -92,14 +102,6 @@ const Login = () => {
             )}
           </button>
           
-          <div className="login-footer">
-            <a href="/" className="back-link">
-              <FaArrowLeft /> Back to Website
-            </a>
-            <span className="default-creds">
-              Default: admin / admin123
-            </span>
-          </div>
         </form>
       </div>
     </div>
