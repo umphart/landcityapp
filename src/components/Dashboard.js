@@ -191,7 +191,7 @@ const Dashboard = () => {
         />
         <StatCard 
           icon={FaMoneyBillWave}
-          title="Total Revenue"
+          title="Total Payments"
           value={formatCurrency(stats.totalPayments)}
           subtitle="All time"
           trend={12.5}

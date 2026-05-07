@@ -29,7 +29,7 @@ const StatsCards = ({ totalClients, activeClients, completedClients, totalRevenu
         <div className="mini-stat-icon revenue-icon"><FaFileInvoiceDollar /></div>
         <div className="mini-stat-info">
           <h3>{totalRevenue}</h3>
-          <p>Total Revenue</p>
+          <p>Total Payments</p>
         </div>
       </div>
       <div className="mini-stat-card">

@@ -3,13 +3,11 @@ import { supabase } from '../supabaseClient';
 import toast from 'react-hot-toast';
 import { 
   FaPlus, 
-  FaUser,
-  FaChartLine,
-  FaCheck,
-  FaFileInvoiceDollar,
-  FaClipboardList,
   FaSearch,
-  FaFilter
+  FaFilter,
+  FaTrash,
+  FaTimes,
+  FaExclamationTriangle
 } from 'react-icons/fa';
 import ClientForm from './ClientForm';
 import PaymentForm from './PaymentForm';
@@ -27,6 +25,8 @@ const Clients = () => {
   const [showPaymentForm, setShowPaymentForm] = useState(false);
   const [showPaymentHistory, setShowPaymentHistory] = useState(false);
   const [showReceipt, setShowReceipt] = useState(false);
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
+  const [clientToDelete, setClientToDelete] = useState(null);
   const [editingClient, setEditingClient] = useState(null);
   const [selectedClient, setSelectedClient] = useState(null);
   const [selectedPayment, setSelectedPayment] = useState(null);
@@ -64,6 +64,20 @@ const Clients = () => {
     setFilteredClients(filtered);
   };
 
+  // Helper function to calculate total price from comma-separated string
+  const calculateTotalPrice = (priceString) => {
+    if (!priceString) return 0;
+    const prices = String(priceString).split(',').map(p => parseFloat(p.trim()) || 0);
+    return prices.reduce((sum, price) => sum + price, 0);
+  };
+
+  // Helper function to calculate total deposit from comma-separated string
+  const calculateTotalDeposit = (depositString) => {
+    if (!depositString) return 0;
+    const deposits = String(depositString).split(',').map(d => parseFloat(d.trim()) || 0);
+    return deposits.reduce((sum, deposit) => sum + deposit, 0);
+  };
+
   const fetchClients = async () => {
     try {
       setLoading(true);
@@ -92,13 +106,17 @@ const Clients = () => {
       const clientsWithBalances = (clientsData || []).map(client => {
         const clientPayments = paymentsByClient[client.id] || [];
         const totalPaid = clientPayments.reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-        const initialDeposit = clientPayments.find(p => p.payment_type === 'initial_deposit')?.amount || 0;
-        const remainingBalance = (Number(client.plot_price) || 0) - totalPaid;
+        
+        const totalPlotPrice = calculateTotalPrice(client.plot_price);
+        const totalInitialDeposit = calculateTotalDeposit(client.initial_deposit);
+        const remainingBalance = totalPlotPrice - totalPaid;
+        
         return {
           ...client,
           payments: clientPayments,
           totalPaid,
-          initialDeposit: Number(initialDeposit),
+          totalPlotPrice,
+          initialDeposit: totalInitialDeposit,
           remainingBalance,
           status: client.status || (remainingBalance <= 0 ? 'completed' : 'active')
         };
@@ -128,63 +146,65 @@ const Clients = () => {
 
   const handleSaveClient = async (formData) => {
     try {
-      const plotPrice = parseFloat(formData.plot_price);
-      const initialDeposit = parseFloat(formData.initial_deposit) || 0;
-      const remainingBalance = plotPrice - initialDeposit;
+      const totalPlotPrice = calculateTotalPrice(formData.plot_price);
+      const totalInitialDeposit = calculateTotalDeposit(formData.initial_deposit);
+      const remainingBalance = totalPlotPrice - totalInitialDeposit;
+
+      const clientData = {
+        name: formData.name.trim(),
+        phone: formData.phone.trim(),
+        plot_number: formData.plot_number.trim(),
+        plot_size: formData.plot_size || '50x50',
+        plot_price: formData.plot_price,
+        initial_deposit: formData.initial_deposit || '0',
+        payment_schedule: parseInt(formData.payment_schedule),
+        payment_method: formData.payment_method,
+        notes: formData.notes || null,
+        total_paid: totalInitialDeposit,
+        remaining_balance: remainingBalance,
+        status: totalInitialDeposit >= totalPlotPrice ? 'completed' : 'active',
+        updated_at: new Date(),
+      };
 
       if (editingClient) {
         const { error } = await supabase
           .from('clients')
-          .update({
-            name: formData.name.trim(),
-            phone: formData.phone.trim(),
-            plot_number: formData.plot_number.trim(),
-            plot_size: formData.plot_size.trim(),
-            plot_price: plotPrice,
-            payment_schedule: parseInt(formData.payment_schedule),
-            notes: formData.notes || null,
-          })
+          .update(clientData)
           .eq('id', editingClient.id);
+        
         if (error) throw error;
         toast.success('Client updated successfully');
       } else {
         const { data: newClient, error } = await supabase
           .from('clients')
-          .insert([{
-            name: formData.name.trim(),
-            phone: formData.phone.trim(),
-            plot_number: formData.plot_number.trim(),
-            plot_size: formData.plot_size.trim(),
-            plot_price: plotPrice,
-            payment_schedule: parseInt(formData.payment_schedule),
-            status: initialDeposit >= plotPrice ? 'completed' : 'active',
-            notes: formData.notes || null,
-          }])
+          .insert([clientData])
           .select()
           .single();
 
         if (error) throw error;
-        if (!newClient) throw new Error('Failed to create client');
 
-        if (initialDeposit > 0) {
+        if (totalInitialDeposit > 0 && newClient) {
           const { error: paymentError } = await supabase
             .from('payments')
             .insert([{
               client_id: newClient.id,
-              amount: initialDeposit,
+              amount: totalInitialDeposit,
               payment_type: 'initial_deposit',
               payment_method: formData.payment_method,
               installment_number: 0,
               total_installments: parseInt(formData.payment_schedule),
               remaining_balance: remainingBalance,
-              notes: 'Initial deposit',
+              notes: `Initial deposit for ${formData.plot_number}`,
             }]);
+          
           if (paymentError) {
+            console.error('Payment error:', paymentError);
             toast.error('Client created but initial deposit recording failed');
           }
         }
         toast.success('Client added successfully');
       }
+      
       setShowForm(false);
       setEditingClient(null);
       fetchClients();
@@ -201,8 +221,9 @@ const Clients = () => {
         toast.error('Please enter a valid payment amount');
         return false;
       }
+      
       if (amount > selectedClient.remainingBalance) {
-        toast.error(`Payment cannot exceed remaining balance of ₦${selectedClient.remainingBalance.toLocaleString()}`);
+        toast.error(`Payment cannot exceed remaining balance of ${formatCurrency(selectedClient.remainingBalance)}`);
         return false;
       }
 
@@ -218,6 +239,7 @@ const Clients = () => {
         ? (existingPayments[0].installment_number || 0) + 1 : 1;
 
       const newRemainingBalance = selectedClient.remainingBalance - amount;
+      const newTotalPaid = (selectedClient.totalPaid || 0) + amount;
       const newStatus = newRemainingBalance <= 0 ? 'completed' : 'active';
 
       const { data: newPayment, error: paymentError } = await supabase
@@ -239,14 +261,17 @@ const Clients = () => {
 
       await supabase
         .from('clients')
-        .update({ status: newStatus })
+        .update({ 
+          status: newStatus,
+          total_paid: newTotalPaid,
+          remaining_balance: newRemainingBalance
+        })
         .eq('id', selectedClient.id);
 
       toast.success(newStatus === 'completed' ? '🎉 Payment completed! Property fully paid.' : 'Payment recorded successfully');
       
       setShowPaymentForm(false);
       
-      // Show receipt
       if (newPayment) {
         setSelectedPayment(newPayment);
         setShowReceipt(true);
@@ -282,16 +307,25 @@ const Clients = () => {
     setShowForm(true);
   };
 
-  const handleDelete = async (id) => {
-    if (window.confirm('Are you sure you want to delete this client? All payment records will also be deleted.')) {
-      try {
-        const { error } = await supabase.from('clients').delete().eq('id', id);
-        if (error) throw error;
-        toast.success('Client deleted successfully');
-        fetchClients();
-      } catch (error) {
-        toast.error('Error deleting client');
-      }
+  const handleDeleteClick = (client) => {
+    setClientToDelete(client);
+    setShowDeleteConfirm(true);
+  };
+
+  const confirmDelete = async () => {
+    if (!clientToDelete) return;
+    
+    try {
+      const { error } = await supabase.from('clients').delete().eq('id', clientToDelete.id);
+      if (error) throw error;
+      toast.success(`${clientToDelete.name} has been deleted successfully`);
+      fetchClients();
+    } catch (error) {
+      console.error('Error deleting client:', error);
+      toast.error('Failed to delete client. Please try again.');
+    } finally {
+      setShowDeleteConfirm(false);
+      setClientToDelete(null);
     }
   };
 
@@ -357,11 +391,53 @@ const Clients = () => {
         onPaymentClick={handlePaymentClick}
         onViewHistory={viewPaymentHistory}
         onEdit={handleEdit}
-        onDelete={handleDelete}
+        onDelete={handleDeleteClick}
         formatCurrency={formatCurrency}
         searchTerm={searchTerm}
         filterStatus={filterStatus}
       />
+
+      {/* Delete Confirmation Modal */}
+      {showDeleteConfirm && clientToDelete && (
+        <div className="modal-overlay" onClick={() => setShowDeleteConfirm(false)}>
+          <div className="delete-confirm-modal">
+            <div className="delete-confirm-header">
+              <FaExclamationTriangle className="delete-warning-icon" />
+              <h3>Confirm Delete</h3>
+              <button className="delete-close-btn" onClick={() => setShowDeleteConfirm(false)}>
+                <FaTimes />
+              </button>
+            </div>
+            <div className="delete-confirm-body">
+              <p>Are you sure you want to delete <strong>{clientToDelete.name}</strong>?</p>
+              <div className="delete-warning-box">
+                <FaExclamationTriangle />
+                <span>This action cannot be undone!</span>
+              </div>
+              <p className="delete-impact">The following data will be permanently deleted:</p>
+              <ul className="delete-list">
+                <li>Client profile information</li>
+                <li>All payment records for this client</li>
+                <li>Payment history and receipts</li>
+                <li>Associated plot information: <strong>{clientToDelete.plot_number}</strong></li>
+              </ul>
+              {clientToDelete.totalPaid > 0 && (
+                <div className="delete-payment-warning">
+                  <strong>⚠️ Warning:</strong> This client has made {formatCurrency(clientToDelete.totalPaid)} in payments that will be lost.
+                </div>
+              )}
+            </div>
+            <div className="delete-confirm-footer">
+              <button className="btn-secondary" onClick={() => setShowDeleteConfirm(false)}>
+                Cancel
+              </button>
+              <button className="btn-danger" onClick={confirmDelete}>
+                <FaTrash /> Yes, Delete Client
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {showForm && (
         <ClientForm 
