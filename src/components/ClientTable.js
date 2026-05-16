@@ -102,7 +102,8 @@ const ClientTable = ({ clients, onPaymentClick, onViewHistory, onEdit, onDelete,
                       <button onClick={() => onEdit(client)} className="btn-icon btn-edit" title="Edit">
                         <FaEdit />
                       </button>
-                      <button onClick={() => onDelete(client.id)} className="btn-icon btn-delete" title="Delete">
+                      {/* FIXED: Pass the full client object, not just the ID */}
+                      <button onClick={() => onDelete(client)} className="btn-icon btn-delete" title="Delete">
                         <FaTrash />
                       </button>
                     </div>

@@ -312,23 +312,60 @@ const Clients = () => {
     setShowDeleteConfirm(true);
   };
 
-  const confirmDelete = async () => {
-    if (!clientToDelete) return;
+const confirmDelete = async () => {
+  if (!clientToDelete || !clientToDelete.id) {
+    console.error('No valid client to delete', clientToDelete);
+    toast.error('Cannot delete: Client information is missing');
+    setShowDeleteConfirm(false);
+    setClientToDelete(null);
+    return;
+  }
+  
+  const loadingToast = toast.loading(`Deleting ${clientToDelete.name} and all payment records...`);
+  
+  try {
+    // Step 1: Delete all payments for this client
+    const { data: deletedPayments, error: paymentsError } = await supabase
+      .from('payments')
+      .delete()
+      .eq('client_id', clientToDelete.id)
+      .select();
     
-    try {
-      const { error } = await supabase.from('clients').delete().eq('id', clientToDelete.id);
-      if (error) throw error;
-      toast.success(`${clientToDelete.name} has been deleted successfully`);
-      fetchClients();
-    } catch (error) {
-      console.error('Error deleting client:', error);
-      toast.error('Failed to delete client. Please try again.');
-    } finally {
-      setShowDeleteConfirm(false);
-      setClientToDelete(null);
+    if (paymentsError) {
+      console.error('Error deleting payments:', paymentsError);
+      throw new Error(`Failed to delete payment records: ${paymentsError.message}`);
     }
-  };
-
+    
+    const paymentsCount = deletedPayments?.length || 0;
+    console.log(`Deleted ${paymentsCount} payment records for client ${clientToDelete.name}`);
+    
+    // Step 2: Delete the client
+    const { error: clientError } = await supabase
+      .from('clients')
+      .delete()
+      .eq('id', clientToDelete.id);
+    
+    if (clientError) throw clientError;
+    
+    // Success message
+    toast.success(
+      `✓ ${clientToDelete.name} deleted successfully\n` +
+      `  • Removed ${paymentsCount} payment record(s)`,
+      { duration: 5000 }
+    );
+    
+    // Refresh the client list
+    await fetchClients();
+    
+  } catch (error) {
+    console.error('Error in delete process:', error);
+    toast.error(error.message || 'Failed to delete client. Please try again.');
+  } finally {
+    toast.dismiss(loadingToast);
+    setShowDeleteConfirm(false);
+    setClientToDelete(null);
+  }
+};
   const handlePaymentClick = (client) => {
     setSelectedClient(client);
     setShowPaymentForm(true);

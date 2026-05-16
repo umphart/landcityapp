@@ -6,6 +6,7 @@ import './Payments.css';
 
 const Payments = () => {
   const [payments, setPayments] = useState([]);
+  const [clientsMap, setClientsMap] = useState({});
   const [filteredPayments, setFilteredPayments] = useState([]);
   const [loading, setLoading] = useState(true);
   const [searchTerm, setSearchTerm] = useState('');
@@ -18,21 +19,22 @@ const Payments = () => {
   });
 
   useEffect(() => {
-    fetchPayments();
+    fetchAllData();
   }, []);
 
   useEffect(() => {
     filterPayments();
-  }, [payments, searchTerm, filterType]);
+  }, [payments, clientsMap, searchTerm, filterType]);
 
   const filterPayments = () => {
     let filtered = [...payments];
     if (searchTerm) {
-      filtered = filtered.filter(p => 
-        p.clients?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.clients?.plot_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
-        p.clients?.phone?.includes(searchTerm)
-      );
+      filtered = filtered.filter(p => {
+        const client = clientsMap[p.client_id];
+        return client?.name?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          client?.plot_number?.toLowerCase().includes(searchTerm.toLowerCase()) ||
+          client?.phone?.includes(searchTerm);
+      });
     }
     if (filterType !== 'all') {
       filtered = filtered.filter(p => p.payment_type === filterType);
@@ -40,33 +42,63 @@ const Payments = () => {
     setFilteredPayments(filtered);
   };
 
-  const fetchPayments = async () => {
+  const fetchAllData = async () => {
     try {
-      const { data, error } = await supabase
+      setLoading(true);
+      
+      // Fetch payments first
+      const { data: paymentsData, error: paymentsError } = await supabase
         .from('payments')
-        .select(`
-          *,
-          clients:client_id (name, phone, plot_number, plot_price, plot_size, payment_schedule)
-        `)
+        .select('*')
         .order('payment_date', { ascending: false });
 
-      if (error) throw error;
+      if (paymentsError) throw paymentsError;
       
-      setPayments(data || []);
-      
-      const totalAmount = (data || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
-      const deposits = (data || []).filter(p => p.payment_type === 'initial_deposit').length;
-      const installments = (data || []).filter(p => p.payment_type === 'installment').length;
-      
-      setStats({
-        totalPayments: (data || []).length,
-        totalAmount,
-        deposits,
-        installments,
-      });
+      if (paymentsData && paymentsData.length > 0) {
+        // Get unique client IDs
+        const clientIds = [...new Set(paymentsData.map(p => p.client_id).filter(id => id))];
+        
+        // Fetch all related clients
+        const { data: clientsData, error: clientsError } = await supabase
+          .from('clients')
+          .select('id, name, phone, plot_number, plot_price, plot_size, payment_schedule')
+          .in('id', clientIds);
+        
+        if (clientsError) throw clientsError;
+        
+        // Create a map for quick lookup
+        const clientsMapData = {};
+        (clientsData || []).forEach(client => {
+          clientsMapData[client.id] = client;
+        });
+        
+        setClientsMap(clientsMapData);
+        setPayments(paymentsData || []);
+        
+        // Calculate stats
+        const totalAmount = (paymentsData || []).reduce((sum, p) => sum + (Number(p.amount) || 0), 0);
+        const deposits = (paymentsData || []).filter(p => p.payment_type === 'initial_deposit').length;
+        const installments = (paymentsData || []).filter(p => p.payment_type === 'installment').length;
+        
+        setStats({
+          totalPayments: (paymentsData || []).length,
+          totalAmount,
+          deposits,
+          installments,
+        });
+      } else {
+        setPayments([]);
+        setClientsMap({});
+        setStats({
+          totalPayments: 0,
+          totalAmount: 0,
+          deposits: 0,
+          installments: 0,
+        });
+      }
     } catch (error) {
-      toast.error('Error fetching payments');
-      console.error(error);
+      toast.error('Error fetching payments: ' + error.message);
+      console.error('Error details:', error);
     } finally {
       setLoading(false);
     }
@@ -75,6 +107,13 @@ const Payments = () => {
   const formatCurrency = (amount) => {
     if (amount === undefined || amount === null) return '₦0';
     return `₦${Number(amount).toLocaleString('en-NG')}`;
+  };
+
+  const getPaymentTypeLabel = (payment) => {
+    if (payment.payment_type === 'initial_deposit') {
+      return 'Deposit';
+    }
+    return `Installment #${payment.installment_number}/${payment.total_installments}`;
   };
 
   if (loading) return (
@@ -156,7 +195,7 @@ const Payments = () => {
 
       {/* Payments Table */}
       <div className="table-container">
-        <table>
+        <table className="payments-table">
           <thead>
             <tr>
               <th>Date</th>
@@ -173,30 +212,35 @@ const Payments = () => {
           </thead>
           <tbody>
             {filteredPayments.length > 0 ? (
-              filteredPayments.map((payment) => (
-                <tr key={payment.id}>
-                  <td>{new Date(payment.payment_date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
-                  <td className="client-name">{payment.clients?.name || 'N/A'}</td>
-                  <td>{payment.clients?.phone || 'N/A'}</td>
-                  <td className="plot-number">{payment.clients?.plot_number || 'N/A'}</td>
-                  <td>{formatCurrency(payment.clients?.plot_price)}</td>
-                  <td>
-                    <span className={`payment-type ${payment.payment_type}`}>
-                      {payment.payment_type === 'initial_deposit' ? 'Deposit' : `Inst #${payment.installment_number}/${payment.total_installments}`}
-                    </span>
-                  </td>
-                  <td>{payment.payment_method?.replace('_', ' ')}</td>
-                  <td className="paid-amount">{formatCurrency(payment.amount)}</td>
-                  <td className={Number(payment.remaining_balance) > 0 ? 'remaining-balance' : 'completed-balance'}>
-                    {formatCurrency(payment.remaining_balance)}
-                  </td>
-                  <td>
-                    <span className={`status-badge ${Number(payment.remaining_balance) <= 0 ? 'paid' : 'pending'}`}>
-                      {Number(payment.remaining_balance) <= 0 ? '✓ Paid' : '⟳ Pending'}
-                    </span>
-                  </td>
-                </tr>
-              ))
+              filteredPayments.map((payment) => {
+                const client = clientsMap[payment.client_id];
+                const isCompleted = Number(payment.remaining_balance) <= 0;
+                
+                return (
+                  <tr key={payment.id}>
+                    <td>{new Date(payment.payment_date).toLocaleDateString('en-NG', { day: 'numeric', month: 'short', year: 'numeric' })}</td>
+                    <td className="client-name">{client?.name || 'Unknown Client'}</td>
+                    <td>{client?.phone || 'N/A'}</td>
+                    <td className="plot-number">{client?.plot_number || 'N/A'}</td>
+                    <td>{formatCurrency(client?.plot_price)}</td>
+                    <td>
+                      <span className={`payment-type ${payment.payment_type}`}>
+                        {getPaymentTypeLabel(payment)}
+                      </span>
+                    </td>
+                    <td>{payment.payment_method?.replace('_', ' ')}</td>
+                    <td className="paid-amount">{formatCurrency(payment.amount)}</td>
+                    <td className={!isCompleted ? 'remaining-balance' : 'completed-balance'}>
+                      {formatCurrency(payment.remaining_balance)}
+                    </td>
+                    <td>
+                      <span className={`status-badge ${isCompleted ? 'paid' : 'pending'}`}>
+                        {isCompleted ? '✓ Paid' : '⟳ Pending'}
+                      </span>
+                    </td>
+                  </tr>
+                );
+              })
             ) : (
               <tr>
                 <td colSpan="10" className="no-data">
